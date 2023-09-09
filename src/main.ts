@@ -235,7 +235,7 @@ export default class RemotelySavePlugin extends Plugin {
         () => self.saveSettings()
       );
 
-      // 等待远程 list 
+      // 等待远程 list ，这里是 s3 的方法
       const remoteRsp = await client.listFromRemote();
       // log.debug(remoteRsp);
 
@@ -438,6 +438,7 @@ export default class RemotelySavePlugin extends Plugin {
     }
   }
 
+  // 入口
   async onload() {
     log.info(`loading plugin ${this.manifest.id}`);
 

@@ -13,6 +13,7 @@ import * as webdav from "./remoteForWebdav";
 
 import { log } from "./moreOnLog";
 
+// 配置 client 的过程，这里只关注 s3 的部分
 export class RemoteClient {
   readonly serviceType: SUPPORTED_SERVICES_TYPE;
   readonly s3Config?: S3Config;
@@ -23,6 +24,8 @@ export class RemoteClient {
   readonly onedriveClient?: onedrive.WrappedOnedriveClient;
   readonly onedriveConfig?: OnedriveConfig;
 
+
+  // s3 部分知识保存了 s3Config
   constructor(
     serviceType: SUPPORTED_SERVICES_TYPE,
     s3Config?: S3Config,
@@ -164,6 +167,8 @@ export class RemoteClient {
     }
   };
 
+  // step1 
+  // 调用 s3.listFromRemote 返回结果
   listFromRemote = async (prefix?: string) => {
     if (this.serviceType === "s3") {
       return await s3.listFromRemote(

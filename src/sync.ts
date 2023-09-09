@@ -86,6 +86,7 @@ export interface PasswordCheckType {
     | "no_password_both_sides";
 }
 
+// step3
 export const isPasswordOk = async (
   remote: RemoteItem[],
   password: string = ""
@@ -98,6 +99,8 @@ export const isPasswordOk = async (
     } as PasswordCheckType;
   }
   const santyCheckKey = remote[0].key;
+
+  // 区分base32 和 base64
   if (santyCheckKey.startsWith(MAGIC_ENCRYPTED_PREFIX_BASE32)) {
     // this is encrypted using old base32!
     // try to decrypt it using the provided password.
