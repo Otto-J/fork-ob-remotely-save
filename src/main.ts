@@ -133,11 +133,14 @@ export default class RemotelySavePlugin extends Plugin {
   i18n: I18n;
   vaultRandomID: string;
 
+  // 这是核心代码，用来同步的，可以从手动同步入手
   async syncRun(triggerSource: SyncTriggerSourceType = "manual") {
+    // 国际化
     const t = (x: TransItemType, vars?: any) => {
       return this.i18n.t(x, vars);
     };
 
+    // 只有手动才会提示，自动不会展示
     const getNotice = (x: string, timeout?: number) => {
       // only show notices in manual mode
       // no notice in auto mode
@@ -145,6 +148,8 @@ export default class RemotelySavePlugin extends Plugin {
         new Notice(x, timeout);
       }
     };
+
+    // 如果不是空闲状态，提示后退出
     if (this.syncStatus !== "idle") {
       // here the notice is shown regardless of triggerSource
       new Notice(
@@ -159,11 +164,13 @@ export default class RemotelySavePlugin extends Plugin {
       return;
     }
 
+    // 不知道干啥的， a11y ?
     let originLabel = `${this.manifest.name}`;
     if (this.syncRibbon !== undefined) {
       originLabel = this.syncRibbon.getAttribute("aria-label");
     }
 
+    // 尝试同步
     try {
       log.info(
         `${
@@ -171,6 +178,7 @@ export default class RemotelySavePlugin extends Plugin {
         }-${Date.now()}: start sync, triggerSource=${triggerSource}`
       );
 
+      // 如果 ？？ 设定图标，修改图标展示的文案，
       if (this.syncRibbon !== undefined) {
         setIcon(this.syncRibbon, iconNameSyncRunning);
         this.syncRibbon.setAttribute(
@@ -184,6 +192,7 @@ export default class RemotelySavePlugin extends Plugin {
 
       const MAX_STEPS = 8;
 
+      // dry 提示
       if (triggerSource === "dry") {
         getNotice(
           t("syncrun_step0", {
@@ -193,21 +202,29 @@ export default class RemotelySavePlugin extends Plugin {
       }
 
       //log.info(`huh ${this.settings.password}`)
+
+      
+      // step1
       getNotice(
         t("syncrun_step1", {
           maxSteps: `${MAX_STEPS}`,
           serviceType: this.settings.serviceType,
         })
       );
+
+      // 修改状态
       this.syncStatus = "preparing";
 
+      // step2
       getNotice(
         t("syncrun_step2", {
           maxSteps: `${MAX_STEPS}`,
         })
       );
+      // 修改状态
       this.syncStatus = "getting_remote_files_list";
       const self = this;
+      // 初始化 client
       const client = new RemoteClient(
         this.settings.serviceType,
         this.settings.s3,
@@ -217,15 +234,20 @@ export default class RemotelySavePlugin extends Plugin {
         this.app.vault.getName(),
         () => self.saveSettings()
       );
+
+      // 等待远程 list 
       const remoteRsp = await client.listFromRemote();
       // log.debug(remoteRsp);
 
+      // step3
       getNotice(
         t("syncrun_step3", {
           maxSteps: `${MAX_STEPS}`,
         })
       );
       this.syncStatus = "checking_password";
+
+      // 检查密码
       const passwordCheckResult = await isPasswordOk(
         remoteRsp.Contents,
         this.settings.password
@@ -235,12 +257,15 @@ export default class RemotelySavePlugin extends Plugin {
         throw Error(passwordCheckResult.reason);
       }
 
+      // step4
       getNotice(
         t("syncrun_step4", {
           maxSteps: `${MAX_STEPS}`,
         })
       );
       this.syncStatus = "getting_remote_extra_meta";
+
+      // 解析远程项目，这里带着密码进去的
       const { remoteStates, metadataFile } = await parseRemoteItems(
         remoteRsp.Contents,
         this.db,
@@ -248,6 +273,8 @@ export default class RemotelySavePlugin extends Plugin {
         client.serviceType,
         this.settings.password
       );
+
+      // 怀疑在解密，需要进一步看
       const origMetadataOnRemote = await fetchMetadataFile(
         metadataFile,
         client,
@@ -255,19 +282,27 @@ export default class RemotelySavePlugin extends Plugin {
         this.settings.password
       );
 
+      // step5
       getNotice(
         t("syncrun_step5", {
           maxSteps: `${MAX_STEPS}`,
         })
       );
       this.syncStatus = "getting_local_meta";
+
+      // 获取所有文件
       const local = this.app.vault.getAllLoadedFiles();
+
+      // 载入文件历史，传递了 db
       const localHistory = await loadFileHistoryTableByVault(
         this.db,
         this.vaultRandomID
       );
       let localConfigDirContents: ObsConfigDirFileType[] = undefined;
+
+      // 如果开启同步 config
       if (this.settings.syncConfigDir) {
+        // configDir 文件丢进去
         localConfigDirContents = await listFilesInObsFolder(
           this.app.vault.configDir,
           this.app.vault,
@@ -277,12 +312,15 @@ export default class RemotelySavePlugin extends Plugin {
       // log.info(local);
       // log.info(localHistory);
 
+      // step6
       getNotice(
         t("syncrun_step6", {
           maxSteps: `${MAX_STEPS}`,
         })
       );
       this.syncStatus = "generating_plan";
+
+      // 生成同步计划，一堆参数
       const { plan, sortedKeys, deletions, sizesGoWrong } = await getSyncPlan(
         remoteStates,
         local,
@@ -299,12 +337,16 @@ export default class RemotelySavePlugin extends Plugin {
         this.settings.password
       );
       log.info(plan.mixedStates); // for debugging
+
+      // 插入同步计划，带着 plan 给 db
       await insertSyncPlanRecordByVault(this.db, plan, this.vaultRandomID);
 
-      // The operations above are almost read only and kind of safe.
-      // The operations below begins to write or delete (!!!) something.
+      // 上面的操作很安全 The operations above are almost read only and kind of safe.
+      // 下面的操作会写入或者删除文件请注意 The operations below begins to write or delete (!!!) something.
+
 
       if (triggerSource !== "dry") {
+        // step7
         getNotice(
           t("syncrun_step7", {
             maxSteps: `${MAX_STEPS}`,
@@ -312,6 +354,8 @@ export default class RemotelySavePlugin extends Plugin {
         );
 
         this.syncStatus = "syncing";
+
+        // 核心，执行同步
         await doActualSync(
           client,
           this.db,
@@ -339,6 +383,8 @@ export default class RemotelySavePlugin extends Plugin {
             self.setCurrSyncMsg(i, totalCount, pathName, decision)
         );
       } else {
+
+        // dry 不会执行
         this.syncStatus = "syncing";
         getNotice(
           t("syncrun_step7skip", {
@@ -347,6 +393,7 @@ export default class RemotelySavePlugin extends Plugin {
         );
       }
 
+      // step8
       getNotice(
         t("syncrun_step8", {
           maxSteps: `${MAX_STEPS}`,
@@ -355,6 +402,7 @@ export default class RemotelySavePlugin extends Plugin {
       this.syncStatus = "finish";
       this.syncStatus = "idle";
 
+      // 如果图标？？，设置图标，标记完成
       if (this.syncRibbon !== undefined) {
         setIcon(this.syncRibbon, iconNameSyncWait);
         this.syncRibbon.setAttribute("aria-label", originLabel);
