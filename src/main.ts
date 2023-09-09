@@ -393,12 +393,14 @@ export default class RemotelySavePlugin extends Plugin {
   async onload() {
     log.info(`loading plugin ${this.manifest.id}`);
 
+    // 获取图标、添加图标
     const { iconSvgSyncWait, iconSvgSyncRunning, iconSvgLogs } = getIconSvg();
 
     addIcon(iconNameSyncWait, iconSvgSyncWait);
     addIcon(iconNameSyncRunning, iconSvgSyncRunning);
     addIcon(iconNameLogs, iconSvgLogs);
 
+    // 默认值
     this.oauth2Info = {
       verifier: "",
       helperModal: undefined,
@@ -409,36 +411,46 @@ export default class RemotelySavePlugin extends Plugin {
 
     this.currSyncMsg = "";
 
+    // 载入配置
     await this.loadSettings();
+
+    // 检查预设规则是否一致
     await this.checkIfPresetRulesFollowed();
 
-    // lang should be load early, but after settings
+    // 国际化部分，从设置里读取语言 lang should be load early, but after settings
     this.i18n = new I18n(this.settings.lang, async (lang: LangTypeAndAuto) => {
       this.settings.lang = lang;
+      // 保存设置
       await this.saveSettings();
     });
     const t = (x: TransItemType, vars?: any) => {
       return this.i18n.t(x, vars);
     };
 
+    // 根据当前日志级别(this.settings.currLogLevel)设置日志记录级别(log.setLevel())。
     if (this.settings.currLogLevel !== undefined) {
       log.setLevel(this.settings.currLogLevel as any);
     }
 
+    // 检查OAuth令牌是否过期(checkIfOauthExpires())，这也是一个异步操作
     await this.checkIfOauthExpires();
 
+    // 从旧的配置文件中获取vaultRandomID，这个操作也是一个异步操作
     // MUST before prepareDB()
     // And, it's also possible to be an empty string,
     // which means the vaultRandomID is read from db later!
     const vaultRandomIDFromOldConfigFile =
       await this.getVaultRandomIDFromOldConfigFile();
 
+    // 添加忽略文件
     // no need to await this
     this.tryToAddIgnoreFile();
 
+    // 调用方法，得到基本路径
     const vaultBasePath = this.getVaultBasePath();
 
     try {
+      // 准备数据库和库id
       await this.prepareDBAndVaultRandomID(
         vaultBasePath,
         vaultRandomIDFromOldConfigFile
@@ -448,15 +460,20 @@ export default class RemotelySavePlugin extends Plugin {
       throw err;
     }
 
+    // 添加输出到数据库，如果开启
     // must AFTER preparing DB
     this.addOutputToDBIfSet();
+    // 如果开启，自动清除数据库中的输出历史记录
     this.enableAutoClearOutputToDBHistIfSet();
 
+    // 开启自动清理同步计划历史记录
     // must AFTER preparing DB
     this.enableAutoClearSyncPlanHist();
 
+    // 同步状态 空闲
     this.syncStatus = "idle";
 
+    // 注册事件：文件删除时候，插入删除记录
     this.registerEvent(
       this.app.vault.on("delete", async (fileOrFolder) => {
         await insertDeleteRecordByVault(
@@ -467,6 +484,7 @@ export default class RemotelySavePlugin extends Plugin {
       })
     );
 
+    // 注册事件：文件重命名，插入重命名记录
     this.registerEvent(
       this.app.vault.on("rename", async (fileOrFolder, oldPath) => {
         await insertRenameRecordByVault(
@@ -478,13 +496,17 @@ export default class RemotelySavePlugin extends Plugin {
       })
     );
 
+    // 注册 protocol 协议 'remotely-save'
     this.registerObsidianProtocolHandler(COMMAND_URI, async (inputParams) => {
+      // 通过协议唤醒时候，通过协议参数和当前库命进行解析
       const parsed = importQrCodeUri(inputParams, this.app.vault.getName());
       if (parsed.status === "error") {
         new Notice(parsed.message);
       } else {
+        // 如果成功了深拷贝一次
         const copied = cloneDeep(parsed.result);
         // new Notice(JSON.stringify(copied))
+        // 设置参数合并、保存、提示
         this.settings = Object.assign({}, this.settings, copied);
         this.saveSettings();
         new Notice(
@@ -495,6 +517,7 @@ export default class RemotelySavePlugin extends Plugin {
       }
     });
 
+    // 不用看，兼容代码。注册 protocol 协议 'remotely-save-cb' 提示方法不让用
     this.registerObsidianProtocolHandler(
       COMMAND_CALLBACK,
       async (inputParams) => {
@@ -506,6 +529,7 @@ export default class RemotelySavePlugin extends Plugin {
       }
     );
 
+    // 兼容 dropbox 的不看
     this.registerObsidianProtocolHandler(
       COMMAND_CALLBACK_DROPBOX,
       async (inputParams) => {
@@ -587,6 +611,7 @@ export default class RemotelySavePlugin extends Plugin {
       }
     );
 
+    // 兼容 onedrive 的不看
     this.registerObsidianProtocolHandler(
       COMMAND_CALLBACK_ONEDRIVE,
       async (inputParams) => {
@@ -665,12 +690,14 @@ export default class RemotelySavePlugin extends Plugin {
       }
     );
 
+    // sidebar 图标注册，点击时候执行 syncRun 手动
     this.syncRibbon = this.addRibbonIcon(
       iconNameSyncWait,
       `${this.manifest.name}`,
       async () => this.syncRun("manual")
     );
 
+    // 注册命令 command_startsync 手动同步
     this.addCommand({
       id: "start-sync",
       name: t("command_startsync"),
@@ -680,6 +707,7 @@ export default class RemotelySavePlugin extends Plugin {
       },
     });
 
+    // 注册命令， dry 同步
     this.addCommand({
       id: "start-sync-dry-run",
       name: t("command_drynrun"),
@@ -689,6 +717,7 @@ export default class RemotelySavePlugin extends Plugin {
       },
     });
 
+    // 导出库同步记录到文件，不用看
     this.addCommand({
       id: "export-sync-plans-json",
       name: t("command_exportsyncplans_json"),
@@ -704,6 +733,7 @@ export default class RemotelySavePlugin extends Plugin {
       },
     });
 
+    // 导出同步计划表，不用看
     this.addCommand({
       id: "export-sync-plans-table",
       name: t("command_exportsyncplans_table"),
@@ -719,6 +749,7 @@ export default class RemotelySavePlugin extends Plugin {
       },
     });
 
+    // 注册命令 从数据库导出日志，不用看
     this.addCommand({
       id: "export-logs-in-db",
       name: t("command_exportlogsindb"),
@@ -733,16 +764,19 @@ export default class RemotelySavePlugin extends Plugin {
       },
     });
 
+    // 注册设置页面 view tab
     this.addSettingTab(new RemotelySaveSettingTab(this.app, this));
 
     // this.registerDomEvent(document, "click", (evt: MouseEvent) => {
     //   log.info("click", evt);
     // });
 
+    // 如果设置里没有没有同意协议，弹一个 modal
     if (!this.settings.agreeToUploadExtraMetadata) {
       const syncAlgoV2Modal = new SyncAlgoV2Modal(this.app, this);
       syncAlgoV2Modal.open();
     } else {
+      // 同意了协议，如果可以就启动自动同步，如果可以就初始同步
       this.enableAutoSyncIfSet();
       this.enableInitSyncIfSet();
     }
